@@ -1,0 +1,34 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: poker-coach-ai-discord:latest
+    container_name: poker-coach-ai
+
+    # Lê DISCORD_TOKEN, DISCORD_CLIENT_ID, ANTHROPIC_API_KEY e demais ajustes.
+    # O arquivo .env fica apenas no host — nunca entra na imagem.
+    env_file:
+      - .env
+
+    # Reinicia sozinho, exceto quando parado manualmente.
+    restart: unless-stopped
+
+    # Reaproveita zumbis e garante o repasse correto dos sinais ao processo.
+    init: true
+
+    # Encerramento limpo: o bot trata SIGTERM e fecha a conexão com o Discord.
+    stop_signal: SIGTERM
+    stop_grace_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Limites conservadores — o bot é I/O bound, não CPU bound.
+    deploy:
+      resources:
+        limits:
+          memory: 512M

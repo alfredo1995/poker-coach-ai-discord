@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancela execuções antigas da mesma branch quando um novo push chega.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Type-check e build (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Type-check (strict)
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Verificar artefato gerado
+        run: test -f dist/bot.js || { echo "dist/bot.js nao foi gerado"; exit 1; }
+
+      - name: Boot smoke test (deve falhar com env ausente)
+        run: |
+          set +e
+          output=$(node dist/bot.js 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -eq 0 ]; then
+            echo "::error::O bot deveria encerrar com codigo != 0 sem as variaveis de ambiente"
+            exit 1
+          fi
+          echo "$output" | grep -q "Variável de ambiente obrigatória ausente" || {
+            echo "::error::Mensagem de validacao de ambiente nao encontrada"
+            exit 1
+          }
+
+  docker:
+    name: Build da imagem Docker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build da imagem (sem push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: poker-coach-ai-discord:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verificar que a imagem sobe e valida o ambiente
+        run: |
+          set +e
+          output=$(docker run --rm poker-coach-ai-discord:ci 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -eq 0 ]; then
+            echo "::error::O container deveria encerrar com codigo != 0 sem as variaveis de ambiente"
+            exit 1
+          fi

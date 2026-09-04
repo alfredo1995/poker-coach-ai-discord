@@ -80,6 +80,42 @@ Tenho KdQd. Vilão tem Fold to C-bet 68%. C-bet ou check back?
 
 Em DM, basta escrever normalmente.
 
+## Docker
+
+A imagem é multi-stage: o TypeScript é compilado no build e a imagem final roda
+apenas o `dist/` com dependências de produção, como usuário sem privilégios.
+
+```bash
+docker compose up -d --build   # sobe em background
+docker compose logs -f         # acompanha os logs
+docker compose down            # encerra (SIGTERM -> shutdown limpo)
+```
+
+O `.env` fica **apenas no host** e é lido via `env_file` — nunca entra na imagem
+(o `.dockerignore` também o exclui). Se o `.env` não existir, o
+`docker compose up` falha imediatamente com `env file ... not found`, o que é
+proposital: melhor falhar no boot do que subir um container sem credenciais.
+
+Sem compose:
+
+```bash
+docker build -t poker-coach-ai-discord .
+docker run -d --name poker-coach-ai --env-file .env --init --restart unless-stopped poker-coach-ai-discord
+```
+
+O container não expõe portas — a comunicação com o Discord é um WebSocket de saída.
+
+## Integração contínua
+
+O workflow `.github/workflows/ci.yml` roda em todo push e pull request para `main`:
+
+- **type-check strict** e **build** em Node 20 e 22;
+- verificação de que `dist/bot.js` foi gerado;
+- smoke test de boot: o processo precisa sair com código diferente de zero e
+  emitir a mensagem de variável de ambiente ausente;
+- build da imagem Docker (com cache do GitHub Actions) e verificação de que o
+  container sobe e aplica a mesma validação de ambiente.
+
 ## Configuração do modelo
 
 | Variável                | Padrão            | Descrição                                                     |
